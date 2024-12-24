@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Operation Flow Visualization</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+        }
+        #visualization {
+            width: 100vw;
+            height: 100vh;
+            background: white;
+        }
+        .node {
+            cursor: pointer;
+        }
+        .link {
+            stroke: #999;
+            stroke-opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+    <div id="visualization"></div>
+
+    <script>
+        async function loadJson() {
+            try {
+                const response = await fetch('output_got.json');
+                const jsonData = await response.json();
+                visualizeJson(jsonData);
+            } catch (error) {
+                console.error("Error loading JSON file:", error);
+                alert("Failed to load the JSON file. Please ensure 'output_got.json' exists and is valid.");
+            }
+        }
+
+        function extractOperations(jsonData) {
+            const nodes = [];
+            const links = [];
+
+            const operations = [];  // Array to store operations for sequential linking
+
+            jsonData.forEach(item => {
+                if (item.operation) {
+                    // Add operation node
+                    nodes.push({ id: item.operation, label: item.operation, type: "operation" });
+                    operations.push(item.operation);  // Store the operation in the sequence
+
+                    // Process thoughts
+                    if (item.thoughts && Array.isArray(item.thoughts)) {
+                        item.thoughts.forEach((thought, index) => {
+                            if (thought.current) {
+                                const thoughtId = `${item.operation}_output_${index}`;
+                                nodes.push({ id: thoughtId, label: thought.current, type: "output" });
+                                links.push({ source: item.operation, target: thoughtId });
+                            }
+                        });
+                    }
+                }
+            });
+
+            // Create sequential links between operations (op1 -> op2 -> op3 ...)
+            for (let i = 0; i < operations.length - 1; i++) {
+                links.push({ source: operations[i], target: operations[i + 1] });
+            }
+
+            return {
+                nodes: Array.from(nodes),
+                links: links
+            };
+        }
+
+        function visualizeJson(jsonData) {
+            d3.select("#visualization").selectAll("*").remove();
+
+            const data = extractOperations(jsonData);
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const margin = 50;
+
+            const svg = d3.select("#visualization")
+                .append("svg")
+                .attr("width", width)
+                .attr("height", height);
+
+            svg.append("defs").append("marker")
+                .attr("id", "arrowhead")
+                .attr("viewBox", "-10 -10 20 20")
+                .attr("refX", 15)
+                .attr("refY", 0)
+                .attr("orient", "auto")
+                .attr("markerWidth", 6)
+                .attr("markerHeight", 6)
+                .append("path")
+                .attr("d", "M-6,-6 L 0,0 L -6,6")
+                .attr("fill", "#999");
+
+            const simulation = d3.forceSimulation(data.nodes)
+                .force("link", d3.forceLink(data.links).id(d => d.id).distance(120))
+                .force("charge", d3.forceManyBody().strength(-300))
+                .force("center", d3.forceCenter(width / 2, height / 2))
+                .force("collision", d3.forceCollide().radius(40)) // Fixed size for collision detection
+                .on("tick", ticked);
+
+            const link = svg.append("g")
+                .selectAll("line")
+                .data(data.links)
+                .join("line")
+                .attr("class", "link")
+                .attr("stroke-width", 2)
+                .attr("marker-end", "url(#arrowhead)");
+
+            const node = svg.append("g")
+                .selectAll("g")
+                .data(data.nodes)
+                .join("g")
+                .attr("class", "node")
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended));
+
+            const fixedRadius = 40; // Fixed radius size for nodes
+
+            node.each(function(d) {
+                const maxLineLength = 15;
+                // Use the full text without wrapping
+                const text = d.label;
+
+                if (d.type === "operation") {
+                    // Use a fixed radius for operation nodes
+                    d3.select(this)
+                        .append("circle")
+                        .attr("r", fixedRadius)
+                        .attr("fill", "#69b3a2")
+                        .attr("stroke", "#3a8070")
+                        .attr("stroke-width", 2);
+                } else {
+                    // Use fixed width and height for output nodes (rectangular)
+                    const rectWidth = 8*64;
+                    const rectHeight = 20; // Fixed height for simplicity
+
+                    d3.select(this)
+                        .append("rect")
+                        .attr("width", rectWidth)
+                        .attr("height", rectHeight)
+                        .attr("x", -rectWidth / 2)
+                        .attr("y", -rectHeight / 2)
+                        .attr("fill", "#f4a261")
+                        .attr("stroke", "#d16666")
+                        .attr("stroke-width", 2);
+                }
+
+                // Append text without wrapping
+                d3.select(this)
+                    .append("text")
+                    .text(text)
+                    .attr("text-anchor", "middle")
+                    .attr("dominant-baseline", "middle")
+                    .attr("x", 0)
+                    .attr("y", 0)
+                    .attr("fill", "white")
+                    .attr("font-size", "10px");
+            });
+
+            function ticked() {
+                link
+                    .attr("x1", d => Math.max(margin, Math.min(width - margin, d.source.x)))
+                    .attr("y1", d => Math.max(margin, Math.min(height - margin, d.source.y)))
+                    .attr("x2", d => Math.max(margin, Math.min(width - margin, d.target.x)))
+                    .attr("y2", d => Math.max(margin, Math.min(height - margin, d.target.y)));
+
+                node.attr("transform", d => {
+                    d.x = Math.max(margin + fixedRadius, Math.min(width - margin - fixedRadius, d.x));
+                    d.y = Math.max(margin + fixedRadius, Math.min(height - margin - fixedRadius, d.y));
+                    return `translate(${d.x},${d.y})`;
+                });
+            }
+
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+        }
+
+        loadJson();
+    </script>
+</body>
+</html>
