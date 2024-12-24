@@ -57,12 +57,13 @@
                     nodes.push({ id: uniqueOperationId, label: item.operation, type: "operation" });
                     operations.push(uniqueOperationId);
 
-                    if (item.thoughts) {
+                    if (item.thoughts && item.scores) {
                         item.thoughts.forEach((thought, index) => {
                             if (thought.current) {
                                 const thoughtId = `${uniqueOperationId}_output_${index}`;
-                                nodes.push({ id: thoughtId, label: thought.current, type: "output" });
-                                links.push({ source: uniqueOperationId, target: thoughtId });
+                                const score = item.scores[index] || 0; // 与对应位置上的分数匹配，默认值为 0
+                                nodes.push({ id: thoughtId, label: thought.current, type: "output", score });
+                                links.push({ source: uniqueOperationId, target: thoughtId, score });
                             }
                         });
                     }
@@ -74,7 +75,7 @@
             }
 
             return { nodes, links };
-}
+        }
 
         function visualizeJson(jsonData) {
             d3.select("#visualization").selectAll("*").remove();
@@ -128,23 +129,29 @@
 
             const fixedRadius = 40; // Fixed radius size for nodes
 
-            node.each(function(d) {
+            node.each(function (d) {
                 const maxLineLength = 15;
-                // Use the full text without wrapping
                 const text = d.label;
 
+                // 定义颜色比例函数，用于根据分数调整颜色深浅
+                const colorScale = d3.scaleLinear()
+                    .domain([0, 10]) // 假设分数范围为 0 到 10，可根据实际数据调整
+                    .range(["orange", "red"]); // 从浅色到深色的颜色渐变
+
+                // 获取节点的填充颜色
+                const fillColor = d.type === "operation" ? "dark" : colorScale(d.score || 0);
+
                 if (d.type === "operation") {
-                    // Use a fixed radius for operation nodes
+                    // 绘制操作节点的圆形
                     d3.select(this)
                         .append("circle")
                         .attr("r", fixedRadius)
-                        .attr("fill", "#69b3a2")
-                        .attr("stroke", "#3a8070")
+                        .attr("fill", fillColor)
                         .attr("stroke-width", 2);
                 } else {
-                    // Use fixed width and height for output nodes (rectangular)
-                    const rectWidth = 8*64;
-                    const rectHeight = 20; // Fixed height for simplicity
+                    // 绘制输出节点的矩形
+                    const rectWidth = 8 * 64;
+                    const rectHeight = 20;
 
                     d3.select(this)
                         .append("rect")
@@ -152,12 +159,11 @@
                         .attr("height", rectHeight)
                         .attr("x", -rectWidth / 2)
                         .attr("y", -rectHeight / 2)
-                        .attr("fill", "#f4a261")
-                        .attr("stroke", "#d16666")
+                        .attr("fill", fillColor)
                         .attr("stroke-width", 2);
                 }
 
-                // Append text without wrapping
+                // 添加节点标签
                 d3.select(this)
                     .append("text")
                     .text(text)
