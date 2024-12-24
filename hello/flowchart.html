@@ -42,38 +42,39 @@
         function extractOperations(jsonData) {
             const nodes = [];
             const links = [];
-
-            const operations = [];  // Array to store operations for sequential linking
+            const operations = [];
+            const operationCounts = {}; // 初始化计数器
 
             jsonData.forEach(item => {
                 if (item.operation) {
-                    // Add operation node
-                    nodes.push({ id: item.operation, label: item.operation, type: "operation" });
-                    operations.push(item.operation);  // Store the operation in the sequence
+                    // 生成唯一操作 ID
+                    if (!operationCounts[item.operation]) {
+                        operationCounts[item.operation] = 0;
+                    }
+                    const uniqueOperationId = `${item.operation}_${operationCounts[item.operation]}`;
+                    operationCounts[item.operation] += 1;
 
-                    // Process thoughts
-                    if (item.thoughts && Array.isArray(item.thoughts)) {
+                    nodes.push({ id: uniqueOperationId, label: item.operation, type: "operation" });
+                    operations.push(uniqueOperationId);
+
+                    if (item.thoughts) {
                         item.thoughts.forEach((thought, index) => {
                             if (thought.current) {
-                                const thoughtId = `${item.operation}_output_${index}`;
+                                const thoughtId = `${uniqueOperationId}_output_${index}`;
                                 nodes.push({ id: thoughtId, label: thought.current, type: "output" });
-                                links.push({ source: item.operation, target: thoughtId });
+                                links.push({ source: uniqueOperationId, target: thoughtId });
                             }
                         });
                     }
                 }
             });
 
-            // Create sequential links between operations (op1 -> op2 -> op3 ...)
             for (let i = 0; i < operations.length - 1; i++) {
                 links.push({ source: operations[i], target: operations[i + 1] });
             }
 
-            return {
-                nodes: Array.from(nodes),
-                links: links
-            };
-        }
+            return { nodes, links };
+}
 
         function visualizeJson(jsonData) {
             d3.select("#visualization").selectAll("*").remove();
